@@ -1,0 +1,235 @@
+// vxlious - Academic Archive Prisma Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  phoneNumber    String
+  school         String
+  grade          String
+  role           String    @default("student") // "student", "admin", "super_admin"
+  studentStatus  String    @default("unverified") // "unverified", "pending", "verified", "rejected"
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  verifications  StudentVerification[]
+  orders         Order[]
+  resourceAccess ResourceAccess[]
+  auditLogs      AuditLog[]             @relation("AdminAuditLogs")
+  supportTickets SupportTicket[]
+  notifications  Notification[]
+
+  @@map("users")
+}
+
+model StudentVerification {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentIdNumber String?
+  documentPath    String    // Secure private storage path
+  documentName    String
+  mimeType        String
+  fileSize        Int
+  status          String    @default("pending") // "pending", "verified", "rejected"
+  rejectionReason String?   // Generic user-facing explanation
+  reviewedById    String?
+  reviewedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("student_verifications")
+}
+
+model Subject {
+  id          String     @id @default(cuid())
+  name        String
+  slug        String     @unique
+  code        String     @unique
+  description String?
+  icon        String?
+  sortOrder   Int        @default(0)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  resources   Resource[]
+
+  @@map("subjects")
+}
+
+model AcademicYear {
+  id        String     @id @default(cuid())
+  name      String     // e.g. "2025–2026"
+  code      String     @unique // e.g. "2025-2026"
+  isCurrent Boolean    @default(false)
+  createdAt DateTime   @default(now())
+  resources Resource[]
+
+  @@map("academic_years")
+}
+
+model Quarter {
+  id            String     @id @default(cuid())
+  name          String     // "Quarter 1", "Quarter 2", etc.
+  quarterNumber Int        @unique
+  createdAt     DateTime   @default(now())
+  resources     Resource[]
+
+  @@map("quarters")
+}
+
+model Resource {
+  id                  String         @id @default(cuid())
+  title               String
+  description         String?
+  subjectId           String
+  subject             Subject        @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  academicYearId      String
+  academicYear        AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  quarterId           String
+  quarter             Quarter        @relation(fields: [quarterId], references: [id], onDelete: Cascade)
+  documentType        String         @default("Practice Paper") // "Practice Paper", "Revision PDF", "Sample Assessment", "Authorized Archive"
+  filePath            String         // Secure private storage key
+  fileName            String
+  fileSize            Int            // In bytes
+  pageCount           Int            @default(1)
+  price               Int            @default(2000) // In KZT ₸
+  isPublished         Boolean        @default(true)
+  authorizationStatus String         @default("Authorized") // "Authorized", "Pending review", "Rejected"
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  orders              Order[]
+  accessRecords       ResourceAccess[]
+
+  @@index([subjectId])
+  @@index([academicYearId])
+  @@index([quarterId])
+  @@index([isPublished, authorizationStatus])
+  @@map("resources")
+}
+
+model Order {
+  id          String          @id @default(cuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resourceId  String
+  resource    Resource        @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  amount      Int             // In KZT
+  currency    String          @default("KZT")
+  status      String          @default("pending") // "pending", "approved", "rejected", "cancelled"
+  adminNotes  String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  receipt     PaymentReceipt?
+  access      ResourceAccess?
+
+  @@index([userId])
+  @@index([resourceId])
+  @@index([status])
+  @@map("orders")
+}
+
+model PaymentReceipt {
+  id            String   @id @default(cuid())
+  orderId       String   @unique
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  filePath      String   // Secure private storage key
+  originalName  String
+  mimeType      String
+  fileSize      Int
+  paymentMethod String   @default("Manual Bank / Kaspi Transfer")
+  uploadedAt    DateTime @default(now())
+
+  @@map("payment_receipts")
+}
+
+model ResourceAccess {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resourceId String
+  resource   Resource  @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  orderId    String?   @unique
+  order      Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  status     String    @default("active") // "active", "revoked"
+  grantedAt  DateTime  @default(now())
+  expiresAt  DateTime?
+
+  @@unique([userId, resourceId])
+  @@index([userId])
+  @@index([resourceId])
+  @@map("resource_access")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  admin      User     @relation("AdminAuditLogs", fields: [adminId], references: [id], onDelete: Cascade)
+  action     String   // e.g. "APPROVE_PAYMENT", "REJECT_VERIFICATION", "UPLOAD_RESOURCE", "DELETE_RESOURCE"
+  targetType String   // "Payment", "User", "Resource", "Verification", "Setting"
+  targetId   String
+  details    String?  // JSON string
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([adminId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model SupportTicket {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category      String    // "Payment", "Verification", "Technical issue", "Resource issue", "Other"
+  subject       String
+  message       String
+  status        String    @default("open") // "open", "in_progress", "resolved", "closed"
+  adminResponse String?
+  resolvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("support_tickets")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String   @default("info") // "info", "success", "warning", "action"
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model SystemSetting {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_settings")
+}
