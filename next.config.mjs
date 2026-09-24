@@ -2,6 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  env: {
+    DATABASE_URL: process.env.DATABASE_URL || "file:./dev.db",
+    JWT_SECRET: process.env.JWT_SECRET || "vxlious-academic-archive-secret-key-super-secure-production-2026",
+  },
   headers: async () => {
     return [
       {

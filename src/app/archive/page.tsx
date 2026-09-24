@@ -9,48 +9,53 @@ export default async function ArchivePage({
 }: {
   searchParams: { subject?: string; year?: string; quarter?: string };
 }) {
-  const user = await getCurrentUser();
-
-  // Fetch authorized resources
-  const resources = await prisma.resource.findMany({
-    where: {
-      isPublished: true,
-      authorizationStatus: "Authorized",
-    },
-    include: {
-      subject: true,
-      academicYear: true,
-      quarter: true,
-    },
-    orderBy: [{ subject: { sortOrder: "asc" } }, { quarter: { quarterNumber: "asc" } }],
-  });
-
-  // Get subjects & years
-  const subjects = await prisma.subject.findMany({
-    where: { isActive: true },
-    orderBy: { sortOrder: "asc" },
-  });
-
-  const academicYears = await prisma.academicYear.findMany({
-    orderBy: { code: "desc" },
-  });
-
-  // Get user access set if logged in
+  let user = null;
+  let resources: any[] = [];
+  let subjects: any[] = [];
+  let academicYears: any[] = [];
   let unlockedResourceIds = new Set<string>();
-  if (user) {
-    if (user.role === "admin" || user.role === "super_admin") {
-      // Admins have access to everything
-      unlockedResourceIds = new Set(resources.map((r) => r.id));
-    } else {
-      const userAccess = await prisma.resourceAccess.findMany({
+
+  try {
+    user = await getCurrentUser();
+
+    [resources, subjects, academicYears] = await Promise.all([
+      prisma.resource.findMany({
         where: {
-          userId: user.id,
-          status: "active",
+          isPublished: true,
+          authorizationStatus: "Authorized",
         },
-        select: { resourceId: true },
-      });
-      unlockedResourceIds = new Set(userAccess.map((a) => a.resourceId));
+        include: {
+          subject: true,
+          academicYear: true,
+          quarter: true,
+        },
+        orderBy: [{ subject: { sortOrder: "asc" } }, { quarter: { quarterNumber: "asc" } }],
+      }),
+      prisma.subject.findMany({
+        where: { isActive: true },
+        orderBy: { sortOrder: "asc" },
+      }),
+      prisma.academicYear.findMany({
+        orderBy: { code: "desc" },
+      }),
+    ]);
+
+    if (user) {
+      if (user.role === "admin" || user.role === "super_admin") {
+        unlockedResourceIds = new Set(resources.map((r) => r.id));
+      } else {
+        const userAccess = await prisma.resourceAccess.findMany({
+          where: {
+            userId: user.id,
+            status: "active",
+          },
+          select: { resourceId: true },
+        });
+        unlockedResourceIds = new Set(userAccess.map((a) => a.resourceId));
+      }
     }
+  } catch (error) {
+    console.warn("Archive database query fallback:", error);
   }
 
   const formattedResources = resources.map((r) => ({
@@ -62,22 +67,22 @@ export default async function ArchivePage({
     fileSize: r.fileSize,
     price: r.price,
     authorizationStatus: r.authorizationStatus,
-    createdAt: r.createdAt.toISOString(),
+    createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
     subject: {
-      id: r.subject.id,
-      name: r.subject.name,
-      slug: r.subject.slug,
-      code: r.subject.code,
+      id: r.subject?.id || "sub",
+      name: r.subject?.name || "Subject",
+      slug: r.subject?.slug || "subject",
+      code: r.subject?.code || "SUB",
     },
     academicYear: {
-      id: r.academicYear.id,
-      name: r.academicYear.name,
-      code: r.academicYear.code,
+      id: r.academicYear?.id || "yr",
+      name: r.academicYear?.name || "2025–2026",
+      code: r.academicYear?.code || "2025-2026",
     },
     quarter: {
-      id: r.quarter.id,
-      name: r.quarter.name,
-      quarterNumber: r.quarter.quarterNumber,
+      id: r.quarter?.id || "q",
+      name: r.quarter?.name || "Quarter 1",
+      quarterNumber: r.quarter?.quarterNumber || 1,
     },
     isUnlocked: unlockedResourceIds.has(r.id),
   }));

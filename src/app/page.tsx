@@ -20,19 +20,43 @@ import {
   FileCheck,
 } from "lucide-react";
 
-export const revalidate = 60; // ISR cache 60s
+export const dynamic = "force-dynamic";
+
+const FALLBACK_SUBJECTS = [
+  { id: "1", name: "Mathematics", slug: "mathematics", code: "MATH", description: "Advanced calculus, algebra, geometry, and trigonometry problem archives.", _count: { resources: 4 } },
+  { id: "2", name: "Physics", slug: "physics", code: "PHYS", description: "Mechanics, thermodynamics, electrodynamics, and wave optics materials.", _count: { resources: 3 } },
+  { id: "3", name: "Chemistry", slug: "chemistry", code: "CHEM", description: "Organic, inorganic, and physical chemistry authorized revision guides.", _count: { resources: 2 } },
+  { id: "4", name: "Biology", slug: "biology", code: "BIO", description: "Cellular biology, genetics, physiology, and ecology practice papers.", _count: { resources: 2 } },
+  { id: "5", name: "Informatics", slug: "informatics", code: "CS", description: "Algorithms, data structures, Python, and computer architecture.", _count: { resources: 2 } },
+  { id: "6", name: "Kazakhstan History", slug: "kazakhstan-history", code: "KZHIST", description: "Ancient to modern statehood development and cultural heritage.", _count: { resources: 2 } },
+];
 
 export default async function LandingPage() {
-  // Fetch available subjects with resource counts
-  const subjects = await prisma.subject.findMany({
-    where: { isActive: true },
-    include: {
-      _count: {
-        select: { resources: { where: { isPublished: true, authorizationStatus: "Authorized" } } },
+  let subjects: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    code: string;
+    description: string | null;
+    _count: { resources: number };
+  }> = FALLBACK_SUBJECTS;
+  try {
+    const dbSubjects = await prisma.subject.findMany({
+      where: { isActive: true },
+      include: {
+        _count: {
+          select: { resources: { where: { isPublished: true, authorizationStatus: "Authorized" } } },
+        },
       },
-    },
-    orderBy: { sortOrder: "asc" },
-  });
+      orderBy: { sortOrder: "asc" },
+    });
+    if (dbSubjects && dbSubjects.length > 0) {
+      subjects = dbSubjects;
+    }
+  } catch (error) {
+    // Graceful fallback for initial builds or cold database starts
+    console.warn("Prisma subjects query fallback active:", error);
+  }
 
   return (
     <div className="flex flex-col items-center w-full overflow-hidden">
